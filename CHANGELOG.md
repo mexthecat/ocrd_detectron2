@@ -5,6 +5,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- workarounds for broken models (DocBank_X101, Jambo-sudo_X101)
+
+### Added
+- CI for CLI tests (with cached models and stored result artifacts)
+
+## [0.1.7] - 2023-03-20
+### Fixed
+- adapt to Numpy 1.24 (no `np.bool`)
+
+### Added
+- model by Jambo-sudo (PubLayNet+custom GT)
+- model by LayoutParser (PRImA Layout GT)
+- CLI tests
+
+## [0.1.6] - 2023-03-10
+### Fixed
+- avoid colon in generated region IDs
+- `make deps`: add explicit deps for torch
+- fix/update file resources
+- fix model config base paths on-the-fly
+
+### Added
+- add Psarpei TD model
 
 ## [0.1.5] - 2023-01-15
 ### Fixed
@@ -54,4 +78,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.3]: ../../compare/v0.1.2...v0.1.3
 [0.1.4]: ../../compare/v0.1.3...v0.1.4
 [0.1.5]: ../../compare/v0.1.4...v0.1.5
-[unreleased]: ../../compare/v0.1.4...master
+[0.1.6]: ../../compare/v0.1.5...v0.1.6
+[0.1.7]: ../../compare/v0.1.6...v0.1.7
+[unreleased]: ../../compare/v0.1.7...master

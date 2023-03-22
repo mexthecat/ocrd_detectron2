@@ -4,6 +4,7 @@ from pkg_resources import resource_filename
 import sys
 import os
 import tempfile
+import fileinput
 import shutil
 import math
 import multiprocessing as mp
@@ -113,6 +114,20 @@ class Detectron2Segment(Processor):
             temp_config = os.path.join(temp_config, os.path.basename(model_config))
             shutil.copyfile(model_config, temp_config)
             with pushd_popd(tmpdir):
+                # repair broken config files that make deviating assumptions on model_zoo files
+                with fileinput.input(temp_config, inplace=True) as temp_config_file:
+                    for line in temp_config_file:
+                        if fileinput.isfirstline():
+                            PREFIXES = ['/content/',
+                                        '../../configs/',
+                                        '../configs/',
+                                        '../']
+                            line = next((line.replace(pref, '') for pref in PREFIXES
+                                         if line.startswith('_BASE_: "' + pref)), line)
+                        if os.path.basename(model_config) == 'Jambo-sudo_X101.yaml' and 'NUM_CLASSES: 5' in line:
+                            # workaround for Jambo-sudo/Historical-document-layout-analysis#1
+                            line = line.replace('NUM_CLASSES: 5', 'NUM_CLASSES: 6')
+                        print(line, end='')
                 cfg = get_cfg()
                 cfg.merge_from_file(temp_config)
         model_weights = self.resolve_resource(self.parameter['model_weights'])
@@ -430,7 +445,7 @@ class Detectron2Segment(Processor):
                     boxes = boxes.to(cpu).tensor.numpy()
                 assert boxes.shape[1] == 4 # and not 5 (rotated boxes)
                 assert boxes.shape[0], "prediction without instances"
-                masks = np.zeros((len(boxes), height, width), np.bool)
+                masks = np.zeros((len(boxes), height, width), bool)
                 for i, (x1, y1, x2, y2) in enumerate(boxes):
                     masks[i,
                           math.floor(y1):math.ceil(y2),
@@ -494,8 +509,6 @@ class Detectron2Segment(Processor):
                 continue
             # annotate new region/line
             region_coords = CoordsType(points_from_polygon(region_polygon), conf=score)
-            region_no += 1
-            region_id = 'region%04d_%s' % (region_no, category)
             cat2class = dict([
                 ('AdvertRegion', AdvertRegionType),
                 ('ChartRegion', ChartRegionType),
@@ -519,6 +532,8 @@ class Detectron2Segment(Processor):
             except KeyError:
                 LOG.critical("Invalid region type %s (see https://github.com/PRImA-Research-Lab/PAGE-XML)", cat[0])
                 sys.exit(1)
+            region_no += 1
+            region_id = 'region%04d_%s' % (region_no, cat[0])
             region = regiontype(id=region_id, Coords=region_coords)
             if len(cat) > 1:
                 try:
@@ -546,7 +561,7 @@ def postprocess_nms(scores, classes, masks, page_array_bin, categories, min_conf
     """
     LOG = getLogger('processor.Detectron2Segment')
     # apply IoU-based NMS across classes
-    assert masks.dtype == np.bool
+    assert masks.dtype == bool
     instances = np.arange(len(masks))
     instances_i, instances_j = np.meshgrid(instances, instances, indexing='ij')
     combinations = list(zip(*np.where(instances_i != instances_j)))
@@ -558,12 +573,12 @@ def postprocess_nms(scores, classes, masks, page_array_bin, categories, min_conf
                  initargs=(shared_masks, masks.shape)) as pool:
         # multiprocessing for different combinations of array slices (pure)
         overlapping_combinations = pool.starmap(overlapmasks, combinations)
-    overlaps = np.zeros((len(masks), len(masks)), np.bool)
+    overlaps = np.zeros((len(masks), len(masks)), bool)
     for (i, j), overlapping in zip(combinations, overlapping_combinations):
         if overlapping:
             overlaps[i, j] = True
     # find best-scoring instance per class
-    bad = np.zeros_like(instances, np.bool)
+    bad = np.zeros_like(instances, bool)
     for i in np.argsort(-scores):
         score = scores[i]
         mask = masks[i]
