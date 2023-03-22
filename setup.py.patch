@@ -1,0 +1,366 @@
+diff --git a/ocrd_detectron2/segment.py b/ocrd_detectron2/segment.py
+index b10aa73..536c495 100644
+--- a/ocrd_detectron2/segment.py
++++ b/ocrd_detectron2/segment.py
+@@ -14,11 +14,11 @@ from shapely.geometry import Polygon
+ from shapely.ops import unary_union
+ import cv2
+ from PIL import Image
+-#from detectron2.utils.logger import setup_logger
++# from detectron2.utils.logger import setup_logger
+ from detectron2.engine import DefaultPredictor
+ from detectron2.utils import visualizer
+ from detectron2.config import get_cfg
+-#from detectron2.data import MetadataCatalog, DatasetCatalog
++# from detectron2.data import MetadataCatalog, DatasetCatalog
+ import torch
+ 
+ from ocrd_utils import (
+@@ -80,6 +80,7 @@ IOCC_THRESHOLD = 0.4
+ # add this many pixels in each direction
+ FINAL_DILATION = 4
+ 
++
+ class Detectron2Segment(Processor):
+ 
+     def __init__(self, *args, **kwargs):
+@@ -91,8 +92,8 @@ class Detectron2Segment(Processor):
+             self.setup()
+ 
+     def setup(self):
+-        #setup_logger(name='fvcore')
+-        #mp.set_start_method("spawn", force=True)
++        # setup_logger(name='fvcore')
++        # mp.set_start_method("spawn", force=True)
+         LOG = getLogger('processor.Detectron2Segment')
+         # runtime overrides
+         if self.parameter['device'] == 'cpu' or not torch.cuda.is_available():
+@@ -168,7 +169,17 @@ class Detectron2Segment(Processor):
+         Produce a new output file by serialising the resulting hierarchy.
+         """
+         LOG = getLogger('processor.Detectron2Segment')
+-        assert_file_grp_cardinality(self.input_file_grp, 1)
++        # assert_file_grp_cardinality(self.input_file_grp, 1)
++
++        input_file_groups = self.input_file_grp.split(',')
++        if len(input_file_groups) == 2:
++            bin_file_group = input_file_groups[1]
++            self.input_file_grp = input_file_groups[0]
++        elif len(input_file_groups) == 1:
++            bin_file_group = input_file_groups[0]
++        else:
++            raise Exception("2 or 3 input groups ar possible")
++
+         assert_file_grp_cardinality(self.output_file_grp, 1)
+         level = self.parameter['operation_level']
+ 
+@@ -183,8 +194,16 @@ class Detectron2Segment(Processor):
+             page_image_raw, page_coords, page_image_info = self.workspace.image_from_page(
+                 page, page_id, feature_filter='binarized')
+             # for morphological post-processing, we will need the binarized image, too
++
++            bin_files = self.workspace.mets.find_all_files(pageId=input_file.pageId, fileGrp=bin_file_group, mimetype=MIMETYPE_PAGE)
++            bin_file = next(iter(bin_files or []), None)
++            bin_pcgts = page_from_file(self.workspace.download_file(bin_file))
++            self.add_metadata(bin_pcgts)
++
++            bin_page = bin_pcgts.get_Page()
+             page_image_bin, _, _ = self.workspace.image_from_page(
+-                page, page_id, feature_selector='binarized')
++                bin_page, page_id, feature_selector='binarized')
++
+             page_image_raw, page_image_bin = _ensure_consistent_crops(
+                 page_image_raw, page_image_bin)
+             # determine current zoom and target zoom
+@@ -205,13 +224,16 @@ class Detectron2Segment(Processor):
+                 zoomed = 1.0
+ 
+             for segment in ([page] if level == 'page' else
+-                            page.get_AllRegions(depth=1, classes=['Table'])):
++            page.get_AllRegions(depth=1, classes=['Table'])):
+                 # regions = segment.get_AllRegions(depth=1)
+                 # FIXME: as long as we don't have get_AllRegions on region level,
+                 #        we have to simulate this via parent_object filtering
+                 def at_segment(region):
+                     return region.parent_object_ is segment
+-                regions = list(filter(at_segment, page.get_AllRegions()))
++
++                regions_to_ignore = self.parameter['regions_to_ignore'].split(',')
++
++                regions = list(filter(at_segment, page.get_AllRegions(classes=regions_to_ignore)))
+ 
+                 if isinstance(segment, PageType):
+                     image_raw = page_image_raw
+@@ -244,11 +266,35 @@ class Detectron2Segment(Processor):
+ 
+                 # convert raw to BGR
+                 array_raw = np.array(image_raw)
+-                array_raw = array_raw[:,:,::-1]
++                array_raw = array_raw[:, :, ::-1]
+                 # convert binarized to single-channel negative
+                 array_bin = np.array(image_bin)
+                 array_bin = ~ array_bin
+ 
++                regions_to_remove = self.parameter['regions_to_remove'].split(',')
++
++                for region_to_remove in regions_to_remove:
++                    try:
++                        region_getter = getattr(segment, 'get_' + region_to_remove)
++                        region_elements = region_getter()
++                        region_reading_order = segment.get_ReadingOrder()
++                        region_reading_order_groups = [region_reading_order.get_UnorderedGroup(), region_reading_order.get_OrderedGroup()]
++
++                        for region_element in region_elements:
++                            region_id = region_element.id
++                            for region_reading_order_group in region_reading_order_groups:
++                                if region_reading_order_group:
++                                    rriList = region_reading_order_group.get_RegionRefIndexed()
++                                    for rri in rriList:
++                                        regionRef = rri.get_regionRef()
++                                        if region_id == regionRef:
++                                            rriList.remove(rri)
++                        region_setter = getattr(segment, 'set_' + region_to_remove)
++                        region_setter([])
++
++                    except AttributeError:
++                        LOG.info("No getter for %s", region_to_remove)
++
+                 self._process_segment(segment, regions, coords, array_raw, array_bin, zoomed)
+ 
+             file_id = make_file_id(input_file, self.output_file_grp)
+@@ -269,8 +315,8 @@ class Detectron2Segment(Processor):
+         cpu = torch.device('cpu')
+         segtype = segment.__class__.__name__[:-4]
+         # remove existing segmentation (have only detected targets survive)
+-        #page.set_ReadingOrder(None)
+-        #page.set_TextRegion([])
++        # page.set_ReadingOrder(None)
++        # page.set_TextRegion([])
+         segment.set_custom('coords=%s' % coords['transform'])
+         height, width, _ = array_raw.shape
+         # get connected components to estimate scale
+@@ -315,7 +361,7 @@ class Detectron2Segment(Processor):
+                 if not self.categories[class_id]:
+                     continue
+                 masks.append(segmap == label)
+-                scores.append(1.0) #scores[i]
++                scores.append(1.0)  # scores[i]
+                 classes.append(class_id)
+             if not len(masks):
+                 LOG.warning("Detected no regions for selected categories on %s '%s'", segtype, segment.id)
+@@ -341,26 +387,28 @@ class Detectron2Segment(Processor):
+             if not scores.shape[0]:
+                 LOG.warning("Detected no regions on %s '%s'", segtype, segment.id)
+                 return
+-            if 'pred_masks' in instances: # or pred_masks_rle ?
++            if 'pred_masks' in instances:  # or pred_masks_rle ?
+                 masks = np.asarray(instances['pred_masks'])
++
+                 def get_mask(x):
+                     # convert from RLE/polygon/Numpy # or Tensor?
+                     # zzz tensor result would have to use .detach().numpy() ...
+                     x = visualizer.GenericMask(x, height, width)
+                     return x.mask > 0
++
+                 masks = np.stack([get_mask(x) for x in masks])
+             elif 'pred_boxes' in instances:
+                 LOG.warning("model has no mask output, only bbox")
+                 boxes = instances['pred_boxes']
+                 if not isinstance(boxes, np.ndarray):
+                     boxes = boxes.to(cpu).tensor.numpy()
+-                assert boxes.shape[1] == 4 # and not 5 (rotated boxes)
++                assert boxes.shape[1] == 4  # and not 5 (rotated boxes)
+                 assert boxes.shape[0], "prediction without instances"
+                 masks = np.zeros((len(boxes), height, width), np.bool)
+                 for i, (x1, y1, x2, y2) in enumerate(boxes):
+                     masks[i,
+-                          math.floor(y1):math.ceil(y2),
+-                          math.floor(x1):math.ceil(x2)] = True
++                    math.floor(y1):math.ceil(y2),
++                    math.floor(x1):math.ceil(x2)] = True
+         else:
+             LOG.error("Found no suitable output format to decode from")
+             return
+@@ -402,11 +450,11 @@ class Detectron2Segment(Processor):
+                     invalid = False
+                     break
+                 mask = cv2.dilate(mask.astype(np.uint8),
+-                                  np.ones((scale,scale), np.uint8)) > 0
++                                  np.ones((scale, scale), np.uint8)) > 0
+             if invalid:
+                 LOG.warning("Ignoring non-contiguous (%d) region for %s", len(contours), category)
+                 continue
+-            region_polygon = contours[0][:,0,:] # already in x,y order
++            region_polygon = contours[0][:, 0, :]  # already in x,y order
+             if zoomed != 1.0:
+                 region_polygon = region_polygon / zoomed
+             # ensure consistent and valid polygon outline
+@@ -435,7 +483,7 @@ class Detectron2Segment(Processor):
+                 ('TableRegion', TableRegionType),
+                 ('TextRegion', TextRegionType),
+                 ('UnknownRegion', UnknownRegionType),
+-                ])
++            ])
+             cat = category.split(':')
+             try:
+                 regiontype = cat2class[cat[0]]
+@@ -455,6 +503,7 @@ class Detectron2Segment(Processor):
+             LOG.info("Detected %s region%04d (p=%.2f) on %s '%s'",
+                      category, region_no, score, segtype, segment.id)
+ 
++
+ def postprocess(scores, classes, masks, page_array_bin, components, categories, min_confidence=0.5, nproc=8):
+     """Apply post-processing to raw detections. Implement via Numpy routines.
+ 
+@@ -470,7 +519,7 @@ def postprocess(scores, classes, masks, page_array_bin, components, categories,
+     shared_masks = mp.sharedctypes.RawArray(ctypes.c_bool, masks.size)
+     shared_masks_np = tonumpyarray_with_shape(shared_masks, masks.shape)
+     np.copyto(shared_masks_np, masks * page_array_bin)
+-    with mp.Pool(processes=nproc, # to be refined via param
++    with mp.Pool(processes=nproc,  # to be refined via param
+                  initializer=overlapmasks_init,
+                  initargs=(shared_masks, masks.shape)) as pool:
+         # multiprocessing for different combinations of array slices (pure)
+@@ -525,7 +574,7 @@ def postprocess(scores, classes, masks, page_array_bin, components, categories,
+     shared_components_np = tonumpyarray_with_shape(shared_components, components.shape)
+     np.copyto(shared_components_np, components, casting='equiv')
+     np.copyto(shared_masks_np, masks)
+-    with mp.Pool(processes=nproc, # to be refined via param
++    with mp.Pool(processes=nproc,  # to be refined via param
+                  initializer=morphmasks_init,
+                  initargs=(shared_masks, masks.shape,
+                            shared_components, components.shape)) as pool:
+@@ -534,6 +583,7 @@ def postprocess(scores, classes, masks, page_array_bin, components, categories,
+     masks = tonumpyarray_with_shape(shared_masks, masks.shape)
+     return scores, classes, masks
+ 
++
+ def polygon_for_parent(polygon, parent):
+     """Clip polygon to parent polygon range.
+ 
+@@ -544,9 +594,9 @@ def polygon_for_parent(polygon, parent):
+         if parent.get_Border():
+             parentp = Polygon(polygon_from_points(parent.get_Border().get_Coords().points))
+         else:
+-            parentp = Polygon([[0,0], [0,parent.get_imageHeight()],
+-                               [parent.get_imageWidth(),parent.get_imageHeight()],
+-                               [parent.get_imageWidth(),0]])
++            parentp = Polygon([[0, 0], [0, parent.get_imageHeight()],
++                               [parent.get_imageWidth(), parent.get_imageHeight()],
++                               [parent.get_imageWidth(), 0]])
+     else:
+         parentp = Polygon(polygon_from_points(parent.get_Coords().points))
+     # ensure input coords have valid paths (without self-intersection)
+@@ -577,15 +627,16 @@ def polygon_for_parent(polygon, parent):
+         # so anticipate rounding here and then ensure validity
+         interp = Polygon(np.round(interp.exterior.coords))
+         interp = make_valid(interp)
+-    return interp.exterior.coords[:-1] # keep open
++    return interp.exterior.coords[:-1]  # keep open
++
+ 
+ def make_valid(polygon):
+-    for split in range(1, len(polygon.exterior.coords)-1):
++    for split in range(1, len(polygon.exterior.coords) - 1):
+         if polygon.is_valid or polygon.simplify(polygon.area).is_valid:
+             break
+         # simplification may not be possible (at all) due to ordering
+         # in that case, try another starting point
+-        polygon = Polygon(polygon.exterior.coords[-split:]+polygon.exterior.coords[:-split])
++        polygon = Polygon(polygon.exterior.coords[-split:] + polygon.exterior.coords[:-split])
+     for tolerance in range(1, int(polygon.area)):
+         if polygon.is_valid:
+             break
+@@ -593,18 +644,22 @@ def make_valid(polygon):
+         polygon = polygon.simplify(tolerance)
+     return polygon
+ 
++
+ def tonumpyarray(mp_arr):
+     return np.frombuffer(mp_arr, dtype=np.dtype(mp_arr))
+ 
++
+ def tonumpyarray_with_shape(mp_arr, shape):
+     return np.frombuffer(mp_arr, dtype=np.dtype(mp_arr)).reshape(shape)
+ 
++
+ def overlapmasks_init(masks_array, masks_shape):
+     global shared_masks
+     global shared_masks_shape
+     shared_masks = masks_array
+     shared_masks_shape = masks_shape
+ 
++
+ def overlapmasks(i, j):
+     # is i redundant w.r.t. j (i.e. j already covers most of its area)
+     masks = np.ctypeslib.as_array(shared_masks).reshape(shared_masks_shape)
+@@ -618,6 +673,7 @@ def overlapmasks(i, j):
+         return True
+     return False
+ 
++
+ def morphmasks_init(masks_array, masks_shape, components_array, components_shape):
+     global shared_masks
+     global shared_masks_shape
+@@ -628,6 +684,7 @@ def morphmasks_init(masks_array, masks_shape, components_array, components_shape
+     shared_components = components_array
+     shared_components_shape = components_shape
+ 
++
+ def morphmasks(instance):
+     masks = np.ctypeslib.as_array(shared_masks).reshape(shared_masks_shape)
+     components = np.ctypeslib.as_array(shared_components).reshape(shared_components_shape)
+@@ -641,22 +698,22 @@ def morphmasks(instance):
+         # overwrite pixel mask from (padded) outer bbox
+         for label in complabels:
+             if not label:
+-                continue # bg/white
++                continue  # bg/white
+             leftc, topc, wc, hc = cv2.boundingRect((components == label).astype(np.uint8))
+             rightc = leftc + wc
+             bottomc = topc + hc
+             if wc > 2 * w or hc > 2 * h:
+-                continue # huge (non-text?) component
++                continue  # huge (non-text?) component
+             # intersection over component too small?
+             if (min(right, rightc) - max(left, leftc)) * \
+-                (min(bottom, bottomc) - max(top, topc)) < IOCC_THRESHOLD * wc * hc:
+-                continue # too little overlap
++                    (min(bottom, bottomc) - max(top, topc)) < IOCC_THRESHOLD * wc * hc:
++                continue  # too little overlap
+             newleft = min(left, leftc)
+             newtop = min(top, topc)
+             newright = max(right, rightc)
+             newbottom = max(bottom, bottomc)
+             if (newright - newleft) > 2 * w or (newbottom - newtop) > 1.5 * h:
+-                continue #
++                continue  #
+             left = newleft
+             top = newtop
+             right = newright
+@@ -673,7 +730,7 @@ def morphmasks(instance):
+         # fill pixel mask from (padded) inner bboxes
+         for label in complabels:
+             if not label:
+-                continue # bg/white
++                continue  # bg/white
+             suppress = False
+             leftc, topc, wc, hc = cv2.boundingRect((components == label).astype(np.uint8))
+             rightc = leftc + wc
+@@ -682,7 +739,7 @@ def morphmasks(instance):
+                 # huge (non-text?) component
+                 suppress = True
+             if (min(right, rightc) - max(left, leftc)) * \
+-                (min(bottom, bottomc) - max(top, topc)) < IOCC_THRESHOLD * wc * hc:
++                    (min(bottom, bottomc) - max(top, topc)) < IOCC_THRESHOLD * wc * hc:
+                 # intersection over component too small
+                 suppress = True
+             newleft = min(left, leftc)
+@@ -713,6 +770,7 @@ def morphmasks(instance):
+                 w = right - left
+                 h = bottom - top
+ 
++
+ def _ensure_consistent_crops(image_raw, image_bin):
+     # workaround for OCR-D/core#687:
+     if 0 < abs(image_raw.width - image_bin.width) <= 2:

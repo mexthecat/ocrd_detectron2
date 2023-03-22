@@ -1,0 +1,7 @@
+ocrd>=2.40
+click>=7.0
+scipy
+numpy>=1.17.0
+pillow>=7.1.2
+shapely
+scikit-image>=0.17.2
