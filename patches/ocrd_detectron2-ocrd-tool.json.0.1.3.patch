@@ -1,0 +1,21 @@
+diff --git a/ocrd_detectron2/ocrd-tool.json b/ocrd_detectron2/ocrd-tool.json
+index b4d010d..f762ba3 100644
+--- a/ocrd_detectron2/ocrd-tool.json
++++ b/ocrd_detectron2/ocrd-tool.json
+@@ -49,6 +49,16 @@
+                     "type": "string",
+                     "default": "cuda",
+                     "description": "select computing device for Torch (e.g. cpu or cuda:0); will fall back to CPU if no GPU is available"
++                },
++                "regions_to_ignore": {
++                  "type": "string",
++                  "description": "preexisting regions to ignore - if empty => all preexisting regions will be ignored for segmentation",
++                  "default": ""
++                },
++                "regions_to_remove": {
++                  "type": "string",
++                  "description": "preexisting regions to remove before segmentation",
++                  "default": ""
+                 }
+             },
+             "resources": [
