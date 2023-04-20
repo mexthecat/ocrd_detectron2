@@ -317,15 +317,15 @@ class Detectron2Segment(Processor):
 
                 self._process_segment(segment, regions, coords, array_raw, array_bin, zoomed,
                                       file_id, input_file.pageId)
+            if self.parameter['postprocessing'] != 'none':
+                file_path = self.workspace.save_image_file(
+                    page_image_bin, 
+                    file_id + '.IMG-BIN',
+                    page_id=input_file.pageId,
+                    file_grp=self.output_file_grp)
 
-            file_path = self.workspace.save_image_file(
-                page_image_bin, 
-                file_id + '.IMG-BIN',
-                page_id=input_file.pageId,
-                file_grp=self.output_file_grp)
-
-            page.add_AlternativeImage(AlternativeImageType(
-                filename=file_path, comments=page_coords['features'] + ',binarized,clipped'))
+                page.add_AlternativeImage(AlternativeImageType(
+                    filename=file_path, comments=page_coords['features'] + ',binarized,clipped'))
             
             file_path = os.path.join(self.output_file_grp,
                                      file_id + '.xml')
