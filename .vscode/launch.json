@@ -1,0 +1,46 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "test_ocrd_detectron2",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/ocrd_detectron2/test_ocrd_detectron2.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "-m",
+        "/var/scego/files/.shadow/scego/files/data/Kundendaten/US048/US048_ScanRobot-SR304_Markus/mets.xml",
+        "-I",
+        "SWF--PYR,SWF--EXTR-TMP",
+        "-O",
+        "SWF--PYR-EXT-DEBUG-NONE",
+        "-P",
+        "postprocessing",
+        "only-morph", 
+        "-P",
+        "model_config",
+        "/home/barth/nextcloud/treventus_cloud/Scego/models/ocrd-detectron2-segment/PrimaLayout_mask_rcnn_R_50_FPN_3x.yaml", 
+        "-P",
+        "model_weights",
+        "/home/barth/nextcloud/treventus_cloud/Scego/models/ocrd-detectron2-segment/PrimaLayout_mask_rcnn_R_50_FPN_3x.pth", 
+        "-P",
+        "categories",
+        "[\"UnknownRegion\", \"TextRegion\", \"ImageRegion\", \"TableRegion\", \"MathsRegion\", \"SeparatorRegion\", \"UnknownRegion\"]", 
+        "-P",
+        "regions_to_ignore",
+        "Text", 
+        "-P",
+        "regions_to_remove",
+        "ImageRegion", 
+        "-P",
+        "operation_level",
+        "page", 
+        "-P",
+        "min_confidence",
+        "0.8",
+        "--overwrite"
+      ]
+    }
+  ]
+}

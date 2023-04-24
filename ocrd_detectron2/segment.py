@@ -63,7 +63,10 @@ from ocrd_models.ocrd_page_generateds import (
 from ocrd_modelfactory import page_from_file
 from ocrd import Processor
 
-from .config import OCRD_TOOL
+try:
+    from .config import OCRD_TOOL
+except Exception:
+    from config import OCRD_TOOL
 
 TOOL = 'ocrd-detectron2-segment'
 # when doing Numpy postprocessing, enlarge masks via
