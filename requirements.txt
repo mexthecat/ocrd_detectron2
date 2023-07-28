@@ -1,11 +1,11 @@
-ocrd>=2.40
-click>=7.0
+ocrd
+click
 scipy
-numpy>=1.17.0
-pillow>=7.1.2
+numpy
+pillow
 shapely
-scikit-image>=0.17.2
-typing-extensions # for torch
-torch>=1.10.0 #,<1.11
+scikit-image
+typing-extensions
+torch>=1.10.0
 torchvision>=0.11.2
 google-auth-oauthlib<1.1,>=0.5
