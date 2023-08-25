@@ -10,11 +10,11 @@
       "justMyCode": false,
       "args": [
         "-m",
-        "/var/scego/files/.shadow/scego/files/data/Kundendaten/US048/US048_ScanRobot-SR304_Markus/mets.xml",
+        "/var/data/.shadow/scego/files/data/Kundendaten/US048/20230707_Vienna_SR304/01_Hockney_OPT_June23_VIENNA_SR0304_p10_50/mets.xml",
         "-I",
         "SWF--PYR,SWF--EXTR-TMP",
         "-O",
-        "SWF--PYR-EXT-DEBUG-NONE",
+        "SWF--PYR-EXT-DEBUG-PRIMA-ONLY-MORPH",
         "-P",
         "postprocessing",
         "only-morph", 
