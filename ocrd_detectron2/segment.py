@@ -98,7 +98,7 @@ class Detectron2Segment(Processor):
     def setup(self):
         #setup_logger(name='fvcore')
         #mp.set_start_method("spawn", force=True)
-        LOG = getLogger('processor.Detectron2Segment')
+        LOG = getLogger('ocr.processor.Detectron2Segment')
         # runtime overrides
         if self.parameter['device'] == 'cpu' or not torch.cuda.is_available():
             device = "cpu"
@@ -193,7 +193,7 @@ class Detectron2Segment(Processor):
 
         Produce a new output file by serialising the resulting hierarchy.
         """
-        LOG = getLogger('processor.Detectron2Segment')
+        LOG = getLogger('ocr.processor.Detectron2Segment')
         input_file_groups = self.input_file_grp.split(',')
         if len(input_file_groups) == 2:
             bin_file_group = input_file_groups[1]
@@ -343,7 +343,7 @@ class Detectron2Segment(Processor):
                      file_id, self.output_file_grp, out.local_filename)
 
     def _process_segment(self, segment, ignore, coords, array_raw, array_bin, zoomed, file_id, page_id):
-        LOG = getLogger('processor.Detectron2Segment')
+        LOG = getLogger('ocr.processor.Detectron2Segment')
         cpu = torch.device('cpu')
         segtype = segment.__class__.__name__[:-4]
         # remove existing segmentation (have only detected targets survive)
@@ -562,7 +562,7 @@ def postprocess_nms(scores, classes, masks, page_array_bin, categories, min_conf
 
     Implement via Numpy routines.
     """
-    LOG = getLogger('processor.Detectron2Segment')
+    LOG = getLogger('ocr.processor.Detectron2Segment')
     # apply IoU-based NMS across classes
     assert masks.dtype == bool
     instances = np.arange(len(masks))
@@ -629,7 +629,7 @@ def postprocess_morph(scores, classes, masks, components, nproc=8):
 
     Implement via Numpy routines.
     """
-    LOG = getLogger('processor.Detectron2Segment')
+    LOG = getLogger('ocr.processor.Detectron2Segment')
     shared_masks = mp.sharedctypes.RawArray(ctypes.c_bool, masks.size)
     shared_components = mp.sharedctypes.RawArray(ctypes.c_int32, components.size)
     shared_masks_np = tonumpyarray_with_shape(shared_masks, masks.shape)
