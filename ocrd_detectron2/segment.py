@@ -63,7 +63,10 @@ from ocrd_models.ocrd_page_generateds import (
 from ocrd_modelfactory import page_from_file
 from ocrd import Processor
 
-from .config import OCRD_TOOL
+try:
+    from .config import OCRD_TOOL
+except Exception:
+    from config import OCRD_TOOL
 
 TOOL = 'ocrd-detectron2-segment'
 # when doing Numpy postprocessing, enlarge masks via
@@ -95,7 +98,7 @@ class Detectron2Segment(Processor):
     def setup(self):
         #setup_logger(name='fvcore')
         #mp.set_start_method("spawn", force=True)
-        LOG = getLogger('processor.Detectron2Segment')
+        LOG = getLogger('ocr.processor.Detectron2Segment')
         # runtime overrides
         if self.parameter['device'] == 'cpu' or not torch.cuda.is_available():
             device = "cpu"
@@ -190,8 +193,15 @@ class Detectron2Segment(Processor):
 
         Produce a new output file by serialising the resulting hierarchy.
         """
-        LOG = getLogger('processor.Detectron2Segment')
-        assert_file_grp_cardinality(self.input_file_grp, 1)
+        LOG = getLogger('ocr.processor.Detectron2Segment')
+        input_file_groups = self.input_file_grp.split(',')
+        if len(input_file_groups) == 2:
+            bin_file_group = input_file_groups[1]
+            self.input_file_grp = input_file_groups[0]
+        elif len(input_file_groups) == 1:
+            bin_file_group = input_file_groups[0]
+        else:
+            raise Exception("1 or 2 input groups ar possible")
         assert_file_grp_cardinality(self.output_file_grp, 1)
         level = self.parameter['operation_level']
 
@@ -209,8 +219,13 @@ class Detectron2Segment(Processor):
                 page, page_id, feature_filter='binarized')
             # for morphological post-processing, we will need the binarized image, too
             if self.parameter['postprocessing'] != 'none':
+                bin_files = self.workspace.mets.find_all_files(pageId=input_file.pageId, fileGrp=bin_file_group, mimetype=MIMETYPE_PAGE)
+                bin_file = next(iter(bin_files or []), None)
+                bin_pcgts = page_from_file(self.workspace.download_file(bin_file))
+                self.add_metadata(bin_pcgts)
+                bin_page = bin_pcgts.get_Page()
                 page_image_bin, _, _ = self.workspace.image_from_page(
-                    page, page_id, feature_selector='binarized')
+                    bin_page, page_id, feature_selector='binarized')
                 page_image_raw, page_image_bin = _ensure_consistent_crops(
                     page_image_raw, page_image_bin)
             else:
@@ -239,7 +254,8 @@ class Detectron2Segment(Processor):
                 #        we have to simulate this via parent_object filtering
                 def at_segment(region):
                     return region.parent_object_ is segment
-                regions = list(filter(at_segment, page.get_AllRegions()))
+                regions_to_ignore = self.parameter['regions_to_ignore'].split(',')
+                regions = list(filter(at_segment, page.get_AllRegions(classes=regions_to_ignore)))
 
                 if isinstance(segment, PageType):
                     image_raw = page_image_raw
@@ -279,12 +295,44 @@ class Detectron2Segment(Processor):
                 # convert binarized to single-channel negative
                 array_bin = np.array(image_bin)
                 array_bin = ~ array_bin
+                regions_to_remove = self.parameter['regions_to_remove'].split(',')
+
+                for region_to_remove in regions_to_remove:
+                    try:
+                        region_getter = getattr(segment, 'get_' + region_to_remove)
+                        region_elements = region_getter()
+                        region_reading_order = segment.get_ReadingOrder()
+                        region_reading_order_groups = [region_reading_order.get_UnorderedGroup(), region_reading_order.get_OrderedGroup()]
+
+                        for region_element in region_elements:
+                            region_id = region_element.id
+                            for region_reading_order_group in region_reading_order_groups:
+                                if region_reading_order_group:
+                                    rriList = region_reading_order_group.get_RegionRefIndexed()
+                                    for rri in rriList:
+                                        regionRef = rri.get_regionRef()
+                                        if region_id == regionRef:
+                                            rriList.remove(rri)
+                        region_setter = getattr(segment, 'set_' + region_to_remove)
+                        region_setter([])
+
+                    except AttributeError:
+                        LOG.info("No getter for %s", region_to_remove)
 
                 self._process_segment(segment, regions, coords, array_raw, array_bin, zoomed,
                                       file_id, input_file.pageId)
+            if self.parameter['postprocessing'] != 'none':
+                file_path = self.workspace.save_image_file(
+                    page_image_bin, 
+                    file_id + '.IMG-BIN',
+                    page_id=input_file.pageId,
+                    file_grp=self.output_file_grp)
 
+                page.add_AlternativeImage(AlternativeImageType(
+                    filename=file_path, comments=page_coords['features'] + ',binarized,clipped'))
+            
             file_path = os.path.join(self.output_file_grp,
-                                     file_id + '.xml')
+                                     input_file.basename_without_extension + '.xml')
             out = self.workspace.add_file(
                 ID=file_id,
                 file_grp=self.output_file_grp,
@@ -296,7 +344,7 @@ class Detectron2Segment(Processor):
                      file_id, self.output_file_grp, out.local_filename)
 
     def _process_segment(self, segment, ignore, coords, array_raw, array_bin, zoomed, file_id, page_id):
-        LOG = getLogger('processor.Detectron2Segment')
+        LOG = getLogger('ocr.processor.Detectron2Segment')
         cpu = torch.device('cpu')
         segtype = segment.__class__.__name__[:-4]
         # remove existing segmentation (have only detected targets survive)
@@ -314,7 +362,8 @@ class Detectron2Segment(Processor):
             if counts.shape[0] > 1:
                 counts = np.sqrt(3 * counts)
                 counts = counts[(5 < counts) & (counts < 100)]
-                scale = int(np.median(counts))
+                if not math.isnan(np.median(counts)):
+                    scale = int(np.median(counts))
                 LOG.debug("estimated scale: %d", scale)
         # predict
         output = self.predictor(array_raw)
@@ -514,7 +563,7 @@ def postprocess_nms(scores, classes, masks, page_array_bin, categories, min_conf
 
     Implement via Numpy routines.
     """
-    LOG = getLogger('processor.Detectron2Segment')
+    LOG = getLogger('ocr.processor.Detectron2Segment')
     # apply IoU-based NMS across classes
     assert masks.dtype == bool
     instances = np.arange(len(masks))
@@ -539,7 +588,9 @@ def postprocess_nms(scores, classes, masks, page_array_bin, categories, min_conf
         mask = masks[i]
         assert mask.shape[:2] == page_array_bin.shape[:2]
         ys, xs = mask.nonzero()
-        assert xs.any() and ys.any(), "instance has empty mask"
+        # assert xs.any() and ys.any(), "instance has empty mask"
+        if not (xs.any() and ys.any()):
+            continue
         bbox = [xs.min(), ys.min(), xs.max(), ys.max()]
         class_id = classes[i]
         if class_id < 0:
@@ -579,7 +630,7 @@ def postprocess_morph(scores, classes, masks, components, nproc=8):
 
     Implement via Numpy routines.
     """
-    LOG = getLogger('processor.Detectron2Segment')
+    LOG = getLogger('ocr.processor.Detectron2Segment')
     shared_masks = mp.sharedctypes.RawArray(ctypes.c_bool, masks.size)
     shared_components = mp.sharedctypes.RawArray(ctypes.c_int32, components.size)
     shared_masks_np = tonumpyarray_with_shape(shared_masks, masks.shape)
