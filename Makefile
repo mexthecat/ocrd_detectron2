@@ -3,6 +3,9 @@ PIP = pip3
 PYTHONIOENCODING=utf8
 SHELL = /bin/bash
 
+# Docker container tag
+DOCKER_TAG = 'bertsky/ocrd_detectron2'
+
 help:
 	@echo
 	@echo "  Targets"
@@ -11,17 +14,20 @@ help:
 	@echo "    install   Install full Python package via pip"
 	@echo "    deps-test Install Python dependencies for tests via pip and models via resmgr"
 	@echo "    test      Run regression tests"
+	@echo "    build     Build Python package as source and wheel distribution"
 	@echo "    clean     Remove symlinks in test/assets"
+	@echo "    docker    Build Docker image"
 	@echo
 	@echo "  Variables"
 	@echo "    PYTHON"
 	@echo "    CUDA_VERSION  override detection of CUDA runtime version (e.g. '11.3' or 'CPU')"
+	@echo "    DOCKER_TAG    Docker image tag of result for the docker target"
 
 # Install Python deps via pip
-# There is no prebuilt for detectron2 on PyPI, and the wheels depend on CUDA and Torch version.
+# There is no prebuilt for detectron2 on PyPI, and the public wheels depend on CUDA and Torch version.
 # See https://github.com/facebookresearch/detectron2/blob/main/INSTALL.md#install-pre-built-detectron2
 # and https://github.com/facebookresearch/detectron2/issues/969
-# While there is a web site which lists them, which works with `pip -f`, this unfortunately cannot
+# While there is a web site which lists them, which works with `pip install -f`, this unfortunately cannot
 # be encapsulated via setuptools, see https://github.com/pypa/pip/issues/5898
 # and https://stackoverflow.com/questions/3472430/how-can-i-make-setuptools-install-a-package-thats-not-on-pypi
 # and https://github.com/pypa/pip/issues/4187
@@ -30,8 +36,10 @@ help:
 # are only available for CUDA 10.1, 10.2, 11.1, 11.3 or CPU.
 # Moreoever, even Torch >=1.10 and <1.11 is not available on https://download.pytorch.org/whl/torch/
 # except for a narrow few CUDA versions.
-# To make matters worse, source build of Detectron2 fails unless Torch is already installed before:
+# To make matters worse, Detectron2 setup fails specifying Torch as build-time and run-time dependency:
 # https://github.com/facebookresearch/detectron2/issues/4472
+# Therefore, source build of Detectron2 fails unless Torch is already installed before _and_ using
+# pip install --no-build-isolation.
 # Finally, due to https://github.com/pypa/pip/issues/4321, we cannot even mix -f links and pkgindex (for Pytorch versions)
 # because pip will (more or less) randomly pick the one or the other.
 # Detectron2 must always have the same version of Torch at runtime which it was compiled against.
@@ -55,8 +63,9 @@ deps:
 	fi && \
 	$(PIP) install -i "https://download.pytorch.org/whl/$$CUDA" \
 	-r <(sed -n "/torch/p" requirements.txt) && \
-	$(PIP) install -f "https://dl.fbaipublicfiles.com/detectron2/wheels/$$CUDA/torch1.10/index.html" \
-	"git+https://github.com/facebookresearch/detectron2@v0.6#egg=detectron2==0.6"
+	$(PIP) install --no-build-isolation -f "https://dl.fbaipublicfiles.com/detectron2/wheels/$$CUDA/torch1.10/index.html" \
+	"git+https://github.com/facebookresearch/detectron2@v0.6#egg=detectron2"
+	-wget --quiet -O- https://github.com/facebookresearch/detectron2/commit/ed294fabf043eadbb33948d5c39f8f0361829a4f.patch | patch -d `$(PYTHON) -c "import detectron2; print(detectron2.__path__[0])"` -p2
 
 # Install Python package via pip
 install: deps
@@ -66,6 +75,9 @@ install: deps
 deps-test: models-test
 	$(PIP) install -r requirements-test.txt
 
+build:
+	$(PIP) install build
+	$(PYTHON) -m build .
 
 # Clone OCR-D/assets to ./repo/assets
 repo/assets:
@@ -80,6 +92,13 @@ test/assets: repo/assets
 # Remove test data copies and intermediate results
 clean:
 	-$(RM) -r test/assets
+
+# Build docker image
+docker:
+	docker build \
+	--build-arg VCS_REF=$$(git rev-parse --short HEAD) \
+	--build-arg BUILD_DATE=$$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+	-t $(DOCKER_TAG) .
 
 #MODELDIR := $(or $(XDG_DATA_HOME),$(HOME)/.local/share)/ocrd-resources/ocrd-detectron2-segment
 
@@ -124,4 +143,4 @@ count-regions := python -c "import sys; from ocrd_models.ocrd_page import parse;
 # make cannot delete directories, so keep them
 .PRECIOUS .SECONDARY: %/OCR-D-BIN %/OCR-D-SEG-$(MODEL)
 
-.PHONY: help deps install deps-test models-test test clean
+.PHONY: help deps install build deps-test models-test test clean docker

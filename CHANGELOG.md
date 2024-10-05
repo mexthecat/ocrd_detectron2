@@ -5,11 +5,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.8] - 2023-06-29
 ### Fixed
 - workarounds for broken models (DocBank_X101, Jambo-sudo_X101)
+- `make deps`: add explicit reqs prior to pip step with Torch index
+- set `pc:PcGts/@pcGtsId` from `mets:file/@ID`
 
 ### Added
 - CI for CLI tests (with cached models and stored result artifacts)
+
+### Changed
+- migrated model URLs from external to Github release assets
 
 ## [0.1.7] - 2023-03-20
 ### Fixed
@@ -80,4 +87,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.5]: ../../compare/v0.1.4...v0.1.5
 [0.1.6]: ../../compare/v0.1.5...v0.1.6
 [0.1.7]: ../../compare/v0.1.6...v0.1.7
-[unreleased]: ../../compare/v0.1.7...master
+[0.1.8]: ../../compare/v0.1.7...v0.1.8
+[unreleased]: ../../compare/v0.1.8...master

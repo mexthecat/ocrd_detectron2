@@ -4,8 +4,10 @@ scipy
 numpy
 pillow
 shapely
-scikit-image
-typing-extensions
-torch>=1.10.0
+scikit-image>=0.17.2
+typing-extensions # for Torch build
+torch>=1.10.0 #,<1.11
 torchvision>=0.11.2
-google-auth-oauthlib<1.1,>=0.5
+detectron2>=0.6
+wheel # for Detectron build
+pycocotools # for Detectron
