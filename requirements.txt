@@ -1,4 +1,4 @@
-ocrd
+ocrd==2.71.0
 click
 scipy
 numpy
