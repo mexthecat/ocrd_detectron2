@@ -7,14 +7,14 @@ LABEL \
     org.label-schema.vcs-url="https://github.com/bertsky/detectron2" \
     org.label-schema.build-date=$BUILD_DATE
 
-ENV DEBIAN_FRONTEND noninteractive
-ENV PYTHONIOENCODING utf8
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONIOENCODING=utf8
 
 # avoid HOME/.local/share (hard to predict USER here)
 # so let XDG_DATA_HOME coincide with fixed system location
 # (can still be overridden by derived stages or at runtime)
 # should be combined with a bind-mount at runtime
-ENV XDG_DATA_HOME /usr/local/share
+ENV XDG_DATA_HOME=/usr/local/share
 
 WORKDIR /build-ocrd
 COPY setup.py .
